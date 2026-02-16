@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+aiosqlite
+pillow
+ffmpeg-python
+python-multipart
+aiofiles
+python-dotenv

@@ -1,0 +1,1 @@
+"""Media-related API routes."""

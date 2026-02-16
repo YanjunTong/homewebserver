@@ -1,0 +1,1 @@
+"""Album-related API routes."""
