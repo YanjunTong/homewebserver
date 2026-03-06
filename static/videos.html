@@ -338,6 +338,20 @@
 
         // 初始化
         async function init() {
+            await scanAndLoad();
+        }
+
+        // 扫描后加载
+        async function scanAndLoad() {
+            const status = document.getElementById('status');
+            try {
+                status.innerHTML = '<div class="spinner"></div>正在扫描视频文件夹...';
+                await fetch('/scan/videos');
+                // 等待后台扫描任务完成
+                await new Promise(r => setTimeout(r, 1500));
+            } catch (e) {
+                console.warn('扫描请求失败，尝试直接加载:', e);
+            }
             await loadMedia();
         }
 

@@ -111,13 +111,13 @@ async def get_or_create_album(db: AsyncSession, folder_path: str) -> Optional[Al
 
 async def scan_directory_based(db: AsyncSession, root_path: str = None) -> dict:
     """
-    目录级相册扫描
+    目录级相册扫描（递归）
     
-    Step 1: 扫描根目录下的子文件夹，创建/删除相册
+    Step 1: 递归扫描 root_path 下所有子目录，创建/删除相册
     Step 2: 为每个相册扫描文件，添加/删除媒体
     """
     if root_path is None:
-        root_path = settings.image_folder
+        root_path = settings.content_folder
     
     stats = {
         "albums_scanned": 0,
@@ -137,19 +137,17 @@ async def scan_directory_based(db: AsyncSession, root_path: str = None) -> dict:
         return stats
     
     try:
-        # Step 1: 同步相册（文件夹）
+        # Step 1: 递归同步相册（文件夹）
         disk_folders = set()
+        abs_root = os.path.abspath(root_path)
         
-        # 将根目录本身作为一个相册
-        if os.path.isdir(root_path):
-            disk_folders.add(os.path.abspath(root_path))
-            
-        for entry in os.listdir(root_path):
-            full_path = os.path.join(root_path, entry)
-            if os.path.isdir(full_path):
-                disk_folders.add(os.path.abspath(full_path))
+        for dirpath, dirnames, filenames in os.walk(root_path):
+            abs_dir = os.path.abspath(dirpath)
+            if abs_dir == abs_root:
+                continue  # 跳过根目录本身，只扫描子目录
+            disk_folders.add(abs_dir)
         
-        logger.info(f"在磁盘上找到 {len(disk_folders)} 个文件夹 (含根目录)")
+        logger.info(f"在磁盘上找到 {len(disk_folders)} 个文件夹")
         
         # 创建缺失的相册
         for folder_path in disk_folders:

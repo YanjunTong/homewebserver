@@ -10,8 +10,7 @@ class Settings(BaseSettings):
     debug: bool = True
     
     # 媒体文件夹配置
-    image_folder: str = "/home/yanjun/media/images"
-    video_folder: str = "/home/yanjun/media/videos"
+    content_folder: str = "/home/yanjun/media/content"
     
     # 数据库配置
     database_url: str = "sqlite+aiosqlite:///./media.db"
@@ -29,8 +28,7 @@ settings = Settings()
 def ensure_folders_exist():
     """确保配置的文件夹存在"""
     folders = [
-        settings.image_folder,
-        settings.video_folder,
+        settings.content_folder,
         Path(__file__).parent / "static",
     ]
     

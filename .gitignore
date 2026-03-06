@@ -3,7 +3,7 @@ img/
 video/
 .img/
 .video/
-.static/thumbnails/
+static/thumbnails/
 # 2. 忽略所有常见的图片/视频格式（防止有人把文件散落在外面）
 *.jpg
 *.jpeg

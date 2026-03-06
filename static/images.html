@@ -117,6 +117,14 @@
             object-fit: cover;
         }
 
+        .album-cover-placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 3.5rem;
+            background: #1f2937;
+        }
+
         .card-info {
             padding: 0.75rem;
         }
@@ -143,32 +151,34 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0, 0, 0, 0.85);
+            background: #000;
             z-index: 2000;
-            align-items: center;
-            justify-content: center;
         }
 
         .modal.active {
-            display: flex;
+            display: block;
         }
 
         .modal-content {
-            background: white;
-            border-radius: 0.75rem;
-            max-width: 90vw;
-            max-height: 90vh;
-            overflow: auto;
+            background: #000;
+            border-radius: 0;
+            width: 100vw;
+            height: 100vh;
+            max-width: 100vw;
+            max-height: 100vh;
+            overflow: hidden;
             position: relative;
+            display: flex;
+            flex-direction: column;
         }
 
         .modal-close {
-            position: absolute;
+            position: fixed;
             top: 1rem;
             right: 1rem;
-            background: white;
+            background: rgba(0,0,0,0.55);
             border: none;
-            font-size: 1.5rem;
+            font-size: 1.3rem;
             cursor: pointer;
             width: 40px;
             height: 40px;
@@ -176,24 +186,138 @@
             align-items: center;
             justify-content: center;
             border-radius: 50%;
-            z-index: 1;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            z-index: 2200;
+            color: white;
         }
 
         .modal-close:hover {
-            background: #f5f5f5;
+            background: rgba(255,255,255,0.25);
+        }
+
+        .modal-image-wrap {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+            overflow: hidden;
+            position: relative;
+            cursor: zoom-in;
+            touch-action: none;
         }
 
         .modal-image {
             max-width: 100%;
-            max-height: 80vh;
+            max-height: 100%;
+            object-fit: contain;
             display: block;
+            transform-origin: center center;
+            transform: translate(0,0) scale(1);
+            user-select: none;
+            -webkit-user-drag: none;
+        }
+
+        .modal-nav {
+            position: fixed;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(255, 255, 255, 0.15);
+            border: none;
+            color: white;
+            font-size: 2rem;
+            width: 52px;
+            height: 96px;
+            cursor: pointer;
+            border-radius: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2100;
+            transition: background 0.2s;
+            user-select: none;
+            outline: none;
+        }
+
+        .modal-nav:hover {
+            background: rgba(255, 255, 255, 0.35);
+        }
+
+        .modal-nav.prev { left: 0.5rem; }
+        .modal-nav.next { right: 0.5rem; }
+
+        .modal-nav:disabled {
+            opacity: 0.12;
+            cursor: default;
+            pointer-events: none;
+        }
+
+        .modal-toolbar {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            background: #1f2937;
+        }
+
+        .rotate-btn {
+            padding: 0.5rem 1.25rem;
+            border: none;
+            border-radius: 0.5rem;
+            background: #374151;
+            color: white;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .rotate-btn:hover {
+            background: #4b5563;
+        }
+
+        .rotate-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
 
         .modal-info {
-            padding: 1.5rem;
-            background: #f5f5f5;
-            border-top: 1px solid #e5e7eb;
+            display: none;
+        }
+
+        .modal-zoom-hint-unused {
+            white-space: nowrap;
+            opacity: 0;
+            transition: opacity 0.4s;
+        }
+
+        .modal-loading {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+            z-index: 5;
+            transition: opacity 0.2s;
+        }
+
+        .modal-loading.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .modal-loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(255,255,255,0.2);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
         }
 
         .modal-title {
@@ -262,10 +386,10 @@
     <!-- 导航栏 -->
     <div class="navbar">
         <div class="nav-left">
-            <button class="back-btn" onclick="window.location.href='index.html'">← 返回首页</button>
-            <h1>🖼️ 图片库</h1>
+            <button class="back-btn" id="backBtn" onclick="handleBack()">← 返回首页</button>
+            <h1 id="navTitle">🖼️ 图片库</h1>
         </div>
-        <div class="counter">图片: <strong id="counter">0</strong></div>
+        <div class="counter"><span id="counterLabel">相册</span>: <strong id="counter">0</strong></div>
     </div>
 
     <!-- 主容器 -->
@@ -274,53 +398,315 @@
             <div class="spinner"></div>
             加载中...
         </div>
+        <!-- 相册列表视图 -->
+        <div id="albumGrid" class="grid" style="display: none;"></div>
+        <!-- 相册图片视图 -->
         <div id="grid" class="grid" style="display: none;"></div>
     </div>
 
     <!-- 预览模态框 -->
     <div id="modal" class="modal">
         <div class="modal-content">
-            <button class="modal-close" onclick="closeModal()">✕</button>
-            <img id="modalImage" class="modal-image" alt="">
+            <div class="modal-image-wrap" id="modalImageWrap">
+                <div class="modal-loading" id="modalLoading">
+                    <div class="modal-loading-spinner"></div>
+                </div>
+                <img id="modalImage" class="modal-image" alt="">
+            </div>
+            <div class="modal-toolbar">
+                <button class="rotate-btn" id="rotateCcwBtn" onclick="rotateImage('ccw')" title="逆时针旋转90°">↺ 逆时针</button>
+                <button class="rotate-btn" id="rotateCwBtn" onclick="rotateImage('cw')" title="顺时针旋转90°">↻ 顺时针</button>
+            </div>
             <div class="modal-info">
                 <div class="modal-title" id="modalTitle"></div>
                 <div class="modal-details" id="modalDetails"></div>
             </div>
         </div>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+        <button class="modal-nav prev" id="prevBtn" onclick="prevImage()">&#10094;</button>
+        <button class="modal-nav next" id="nextBtn" onclick="nextImage()">&#10095;</button>
     </div>
 
     <script>
         let mediaList = [];
+        let currentMedia = null;
+        let currentIndex = -1;
+        let albumList = [];
+        let currentAlbum = null;
+
+        // ========== 缩放 / 平移状态 ==========
+        let zs = { scale: 1, tx: 0, ty: 0 };
+        let pan = { active: false, startX: 0, startY: 0, startTx: 0, startTy: 0 };
+        let pinch = { active: false, startDist: 0, startScale: 1, startTx: 0, startTy: 0, midX: 0, midY: 0 };
+
+        function resetZoom() {
+            zs = { scale: 1, tx: 0, ty: 0 };
+            applyZoom();
+        }
+
+        function applyZoom() {
+            const img = document.getElementById('modalImage');
+            const wrap = document.getElementById('modalImageWrap');
+            img.style.transform = `translate(${zs.tx}px, ${zs.ty}px) scale(${zs.scale})`;
+            wrap.style.cursor = zs.scale > 1 ? (pan.active ? 'grabbing' : 'grab') : 'zoom-in';
+        }
+
+        function setupZoomEvents() {
+            const wrap = document.getElementById('modalImageWrap');
+
+            // 滚轮缩放
+            wrap.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const factor = e.deltaY < 0 ? 1.15 : 0.87;
+                const newScale = Math.min(12, Math.max(1, zs.scale * factor));
+                if (newScale === 1) { resetZoom(); return; }
+                const rect = wrap.getBoundingClientRect();
+                const cx = e.clientX - rect.left - rect.width / 2;
+                const cy = e.clientY - rect.top - rect.height / 2;
+                const ratio = newScale / zs.scale;
+                zs.tx = cx + (zs.tx - cx) * ratio;
+                zs.ty = cy + (zs.ty - cy) * ratio;
+                zs.scale = newScale;
+                applyZoom();
+            }, { passive: false });
+
+            // 鼠标拖拽
+            wrap.addEventListener('mousedown', (e) => {
+                if (zs.scale <= 1) return;
+                e.preventDefault();
+                pan = { active: true, startX: e.clientX, startY: e.clientY, startTx: zs.tx, startTy: zs.ty };
+                applyZoom();
+            });
+            document.addEventListener('mousemove', (e) => {
+                if (!pan.active) return;
+                zs.tx = pan.startTx + (e.clientX - pan.startX);
+                zs.ty = pan.startTy + (e.clientY - pan.startY);
+                applyZoom();
+            });
+            document.addEventListener('mouseup', () => {
+                if (pan.active) { pan.active = false; applyZoom(); }
+            });
+
+            // 双击切换缩放
+            wrap.addEventListener('dblclick', (e) => {
+                if (zs.scale > 1) {
+                    resetZoom();
+                } else {
+                    const rect = wrap.getBoundingClientRect();
+                    const cx = e.clientX - rect.left - rect.width / 2;
+                    const cy = e.clientY - rect.top - rect.height / 2;
+                    zs.scale = 2.5;
+                    zs.tx = -cx * 1.5;
+                    zs.ty = -cy * 1.5;
+                    applyZoom();
+                }
+            });
+
+            // 触屏捏合缩放 + 单指拖拽
+            wrap.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                if (e.touches.length === 2) {
+                    const dx = e.touches[0].clientX - e.touches[1].clientX;
+                    const dy = e.touches[0].clientY - e.touches[1].clientY;
+                    pinch = {
+                        active: true,
+                        startDist: Math.hypot(dx, dy),
+                        startScale: zs.scale,
+                        startTx: zs.tx, startTy: zs.ty,
+                        midX: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+                        midY: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+                    };
+                    pan.active = false;
+                } else if (e.touches.length === 1) {
+                    pan = { active: true, startX: e.touches[0].clientX, startY: e.touches[0].clientY, startTx: zs.tx, startTy: zs.ty };
+                }
+            }, { passive: false });
+
+            wrap.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                if (e.touches.length === 2 && pinch.active) {
+                    const dx = e.touches[0].clientX - e.touches[1].clientX;
+                    const dy = e.touches[0].clientY - e.touches[1].clientY;
+                    const newScale = Math.min(12, Math.max(1, pinch.startScale * Math.hypot(dx, dy) / pinch.startDist));
+                    const rect = wrap.getBoundingClientRect();
+                    const cx = pinch.midX - rect.left - rect.width / 2;
+                    const cy = pinch.midY - rect.top - rect.height / 2;
+                    const ratio = newScale / pinch.startScale;
+                    zs.scale = newScale;
+                    zs.tx = cx + (pinch.startTx - cx) * ratio;
+                    zs.ty = cy + (pinch.startTy - cy) * ratio;
+                    applyZoom();
+                } else if (e.touches.length === 1 && pan.active && zs.scale > 1) {
+                    zs.tx = pan.startTx + (e.touches[0].clientX - pan.startX);
+                    zs.ty = pan.startTy + (e.touches[0].clientY - pan.startY);
+                    applyZoom();
+                }
+            }, { passive: false });
+
+            wrap.addEventListener('touchend', (e) => {
+                if (e.touches.length < 2) pinch.active = false;
+                if (e.touches.length === 0) pan.active = false;
+            });
+        }
+
+        setupZoomEvents();
+
+        // ====== 视图切换 ======
+        let currentView = 'albums';
+
+        function handleBack() {
+            if (currentView === 'images') {
+                showAlbumView();
+            } else {
+                window.location.href = 'index.html';
+            }
+        }
+
+        function showAlbumView() {
+            currentView = 'albums';
+            currentAlbum = null;
+            mediaList = [];
+            document.getElementById('albumGrid').style.display = 'grid';
+            document.getElementById('grid').style.display = 'none';
+            document.getElementById('backBtn').textContent = '← 返回首页';
+            document.getElementById('backBtn').onclick = () => window.location.href = 'index.html';
+            document.getElementById('navTitle').textContent = '🖼️ 图片库';
+            document.getElementById('counterLabel').textContent = '相册';
+            document.getElementById('counter').textContent = albumList.length;
+        }
+
+        function showImageView(album) {
+            currentView = 'images';
+            currentAlbum = album;
+            document.getElementById('albumGrid').style.display = 'none';
+            document.getElementById('grid').style.display = 'none';
+            document.getElementById('backBtn').textContent = '← 返回相册';
+            document.getElementById('backBtn').onclick = showAlbumView;
+            document.getElementById('navTitle').textContent = '📂 ' + album.name;
+            document.getElementById('counterLabel').textContent = '图片';
+        }
 
         // 初始化
         async function init() {
-            await loadMedia();
+            await scanAndLoad();
         }
 
-        // 加载媒体列表
-        async function loadMedia() {
+        // 扫描后加载
+        async function scanAndLoad() {
+            const status = document.getElementById('status');
             try {
-                const response = await fetch('/media?skip=0&limit=5000');
-                const data = await response.json();
-                
-                // 只显示图片
-                mediaList = data.filter(m => m.media_type === 'image') || [];
+                status.style.display = 'block';
+                status.innerHTML = '<div class="spinner"></div>正在扫描图片文件夹...';
+                await fetch('/scan/images');
+                // 等待后台扫描任务完成
+                await new Promise(r => setTimeout(r, 1500));
+            } catch (e) {
+                console.warn('扫描请求失败，尝试直接加载:', e);
+            }
+            await loadAlbums();
+        }
 
+        // 加载相册列表
+        async function loadAlbums() {
+            const status = document.getElementById('status');
+            try {
+                const response = await fetch('/albums?skip=0&limit=200');
+                albumList = await response.json();
+                renderAlbums();
+            } catch (error) {
+                console.error('加载相册失败:', error);
+                status.style.display = 'block';
+                status.innerHTML = '<div class="empty-text">加载失败，请刷新重试</div>';
+            }
+        }
+
+        // 渲染相册列表
+        function renderAlbums() {
+            const albumGrid = document.getElementById('albumGrid');
+            const status = document.getElementById('status');
+
+            if (albumList.length === 0) {
+                status.innerHTML = '<div class="empty"><div class="empty-icon">🖼️</div><div class="empty-title">暂无相册</div><div class="empty-text">请先扫描图片文件夹</div></div>';
+                status.style.display = 'block';
+                albumGrid.style.display = 'none';
+                return;
+            }
+
+            status.style.display = 'none';
+            albumGrid.style.display = 'grid';
+            albumGrid.innerHTML = '';
+            document.getElementById('counterLabel').textContent = '相册';
+            document.getElementById('counter').textContent = albumList.length;
+
+            albumList.forEach(album => {
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.onclick = () => openAlbum(album);
+
+                const imgWrap = document.createElement('div');
+                imgWrap.className = 'card-image album-cover-placeholder';
+                imgWrap.id = 'cover-' + album.id;
+                imgWrap.textContent = '📁';
+
+                const info = document.createElement('div');
+                info.className = 'card-info';
+                info.innerHTML = `<div class="card-title" title="${album.name}">${album.name}</div>`;
+
+                card.appendChild(imgWrap);
+                card.appendChild(info);
+                albumGrid.appendChild(card);
+
+                loadAlbumCover(album.id);
+            });
+        }
+
+        async function loadAlbumCover(albumId) {
+            try {
+                const resp = await fetch(`/albums/${albumId}/media?skip=0&limit=1`);
+                const items = await resp.json();
+                if (items.length > 0 && items[0].media_type === 'image') {
+                    const wrap = document.getElementById('cover-' + albumId);
+                    if (wrap) {
+                        const img = document.createElement('img');
+                        img.className = 'card-image';
+                        img.src = `/media/${items[0].id}/thumbnail`;
+                        img.onerror = () => {};
+                        wrap.replaceWith(img);
+                    }
+                }
+            } catch(e) {}
+        }
+
+        async function openAlbum(album) {
+            showImageView(album);
+            const status = document.getElementById('status');
+            status.style.display = 'block';
+            status.innerHTML = '<div class="spinner"></div>加载中...';
+            await loadAlbumImages(album.id);
+        }
+
+        async function loadAlbumImages(albumId) {
+            try {
+                const resp = await fetch(`/albums/${albumId}/media?skip=0&limit=5000`);
+                const allMedia = await resp.json();
+                mediaList = allMedia.filter(m => m.media_type === 'image');
                 document.getElementById('counter').textContent = mediaList.length;
                 renderMedia();
             } catch (error) {
                 console.error('加载失败:', error);
+                document.getElementById('status').style.display = 'block';
                 document.getElementById('status').innerHTML = '<div class="empty-text">加载失败，请刷新重试</div>';
             }
         }
 
-        // 渲染媒体
+        // 渲染图片网格
         function renderMedia() {
             const grid = document.getElementById('grid');
             const status = document.getElementById('status');
 
             if (mediaList.length === 0) {
-                status.innerHTML = '<div class="empty"><div class="empty-icon">🖼️</div><div class="empty-title">暂无图片文件</div><div class="empty-text">请先扫描图片文件夹</div></div>';
+                status.innerHTML = '<div class="empty"><div class="empty-icon">🖼️</div><div class="empty-title">暂无图片文件</div><div class="empty-text">该相册没有图片</div></div>';
+                status.style.display = 'block';
                 grid.style.display = 'none';
                 return;
             }
@@ -329,13 +715,14 @@
             grid.style.display = 'grid';
             grid.innerHTML = '';
 
-            mediaList.forEach(media => {
+            mediaList.forEach((media, idx) => {
                 const card = document.createElement('div');
                 card.className = 'card';
-                card.onclick = () => openModal(media);
+                card.onclick = () => openModal(idx);
 
                 const img = document.createElement('img');
                 img.className = 'card-image';
+                img.dataset.id = media.id;
                 img.src = `/media/${media.id}/thumbnail`;
                 img.onerror = () => {
                     img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 150"%3E%3Crect fill="%23e5e7eb" width="200" height="150"/%3E%3C/svg%3E';
@@ -356,33 +743,99 @@
         }
 
         // 打开预览
-        function openModal(media) {
-            document.getElementById('modalImage').src = `/media/${media.id}/stream`;
-            document.getElementById('modalTitle').textContent = media.filename;
-            document.getElementById('modalDetails').innerHTML = `
-                <div class="detail-item">
-                    <div class="detail-label">大小</div>
-                    <div>${formatSize(media.size)}</div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-label">分辨率</div>
-                    <div>${media.width || '-'} × ${media.height || '-'}</div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-label">上传时间</div>
-                    <div>${new Date(media.created_at).toLocaleDateString('zh-CN')}</div>
-                </div>
-                <div class="detail-item">
-                    <div class="detail-label">格式</div>
-                    <div>${media.filename.split('.').pop().toUpperCase()}</div>
-                </div>
-            `;
+        function openModal(index) {
+            currentIndex = index;
+            const media = mediaList[index];
+            currentMedia = media;
+
+            // 切图时重置缩放
+            resetZoom();
+
+            const imgEl = document.getElementById('modalImage');
+            const loading = document.getElementById('modalLoading');
+
+            // 显示加载状态
+            loading.classList.remove('hidden');
+            imgEl.style.opacity = '0';
+
+            const src = `/media/${media.id}/stream`;
+            imgEl.onload = () => {
+                loading.classList.add('hidden');
+                imgEl.style.opacity = '1';
+            };
+            imgEl.onerror = () => {
+                loading.classList.add('hidden');
+                imgEl.style.opacity = '1';
+            };
+            imgEl.src = src;
+
 
             document.getElementById('modal').classList.add('active');
+            updateNavButtons();
+            preloadAdjacent(index);
+        }
+
+        function preloadAdjacent(index) {
+            [index - 1, index + 1].forEach(i => {
+                if (i >= 0 && i < mediaList.length) {
+                    const pre = new Image();
+                    pre.src = `/media/${mediaList[i].id}/stream`;
+                }
+            });
+        }
+
+        function prevImage() {
+            if (currentIndex > 0) openModal(currentIndex - 1);
+        }
+
+        function nextImage() {
+            if (currentIndex < mediaList.length - 1) openModal(currentIndex + 1);
+        }
+
+        function updateNavButtons() {
+            document.getElementById('prevBtn').disabled = currentIndex <= 0;
+            document.getElementById('nextBtn').disabled = currentIndex >= mediaList.length - 1;
+        }
+
+        function renderModalDetails(media) {
+            // 信息栏已隐藏，仅保留供旋转后更新内部数据
+        }
+
+        // 旋转图片
+        async function rotateImage(direction) {
+            if (!currentMedia) return;
+            const cwBtn = document.getElementById('rotateCwBtn');
+            const ccwBtn = document.getElementById('rotateCcwBtn');
+            cwBtn.disabled = true;
+            ccwBtn.disabled = true;
+            try {
+                const resp = await fetch(`/media/${currentMedia.id}/rotate?direction=${direction}`, { method: 'POST' });
+                if (!resp.ok) throw new Error(await resp.text());
+                const data = await resp.json();
+                // 更新缓存中的宽高
+                currentMedia.width = data.width;
+                currentMedia.height = data.height;
+                // 刷新模态框图片（缓存破坏）
+                const ts = Date.now();
+                document.getElementById('modalImage').src = `/media/${currentMedia.id}/stream?t=${ts}`;
+                // 刷新缩略图
+                const cardImg = document.querySelector(`img[data-id="${currentMedia.id}"]`);
+                if (cardImg) cardImg.src = `/media/${currentMedia.id}/thumbnail?t=${ts}`;
+                // 更新分辨率显示
+                renderModalDetails(currentMedia);
+            } catch (e) {
+                alert('旋转失败: ' + e.message);
+            } finally {
+                cwBtn.disabled = false;
+                ccwBtn.disabled = false;
+            }
         }
 
         // 关闭预览
         function closeModal() {
+            resetZoom();
+            currentMedia = null;
+            currentIndex = -1;
             document.getElementById('modal').classList.remove('active');
         }
 
@@ -395,11 +848,14 @@
             return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
         }
 
-        // Esc 关闭模态框
+        // 键盘快捷键
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                closeModal();
-            }
+            if (!document.getElementById('modal').classList.contains('active')) return;
+            if (e.key === 'Escape') { closeModal(); return; }
+            // 缩放中禁止切图，避免意外
+            if (zs.scale > 1) return;
+            if (e.key === 'ArrowLeft') prevImage();
+            if (e.key === 'ArrowRight') nextImage();
         });
 
         // 页面加载完成

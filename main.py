@@ -41,8 +41,7 @@ async def lifespan(app: FastAPI):
     try:
         # 初始化配置文件夹
         ensure_folders_exist()
-        logger.info(f"图片文件夹: {settings.image_folder}")
-        logger.info(f"视频文件夹: {settings.video_folder}")
+        logger.info(f"内容根目录: {settings.content_folder}")
         
         # 初始化数据库
         await init_db()
@@ -128,7 +127,7 @@ async def scan_media(
     """
     # 如果没有提供路径，则使用配置的默认值
     if not root_path:
-        root_path = settings.image_folder
+        root_path = settings.content_folder
     
     # 验证路径
     if not os.path.isdir(root_path):
@@ -153,29 +152,22 @@ async def scan_images(
     background_tasks: BackgroundTasks = BackgroundTasks(),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    快捷扫描：扫描配置中的图片文件夹
+    """快捷扫描：扫描 content 根目录（包含图片和视频）"""
+    content_folder = settings.content_folder
     
-    支持 GET 和 POST 请求方法
-    
-    Returns:
-        扫描状态消息
-    """
-    image_folder = settings.image_folder
-    
-    if not os.path.isdir(image_folder):
+    if not os.path.isdir(content_folder):
         return {
             "status": "error",
-            "message": f"图片文件夹不存在: {image_folder}"
+            "message": f"内容文件夹不存在: {content_folder}"
         }
     
-    background_tasks.add_task(scan_directory, image_folder, db)
+    background_tasks.add_task(scan_directory, content_folder, db)
     
-    logger.info(f"开始扫描图片文件夹: {image_folder}")
+    logger.info(f"开始扫描内容文件夹: {content_folder}")
     return {
         "status": "started",
-        "message": f"开始扫描图片文件夹: {image_folder}",
-        "folder": image_folder,
+        "message": f"开始扫描内容文件夹: {content_folder}",
+        "folder": content_folder,
     }
 
 
@@ -184,29 +176,22 @@ async def scan_videos(
     background_tasks: BackgroundTasks = BackgroundTasks(),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    快捷扫描：扫描配置中的视频文件夹
+    """快捷扫描：扫描 content 根目录（包含图片和视频）"""
+    content_folder = settings.content_folder
     
-    支持 GET 和 POST 请求方法
-    
-    Returns:
-        扫描状态消息
-    """
-    video_folder = settings.video_folder
-    
-    if not os.path.isdir(video_folder):
+    if not os.path.isdir(content_folder):
         return {
             "status": "error",
-            "message": f"视频文件夹不存在: {video_folder}"
+            "message": f"内容文件夹不存在: {content_folder}"
         }
     
-    background_tasks.add_task(scan_directory, video_folder, db)
+    background_tasks.add_task(scan_directory, content_folder, db)
     
-    logger.info(f"开始扫描视频文件夹: {video_folder}")
+    logger.info(f"开始扫描内容文件夹: {content_folder}")
     return {
         "status": "started",
-        "message": f"开始扫描视频文件夹: {video_folder}",
-        "folder": video_folder,
+        "message": f"开始扫描内容文件夹: {content_folder}",
+        "folder": content_folder,
     }
 
 

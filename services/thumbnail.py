@@ -1,11 +1,12 @@
 """缩略图生成服务"""
 import asyncio
+import hashlib
 import logging
 from pathlib import Path
 from typing import Optional
 
 import ffmpeg
-from PIL import Image
+from PIL import Image, ImageOps
 from models import MediaType
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,12 @@ THUMBNAIL_FORMAT = "webp"
 VIDEO_THUMBNAIL_TIMESTAMP = "00:00:05"
 
 
+def get_thumbnail_path(file_path: str) -> Path:
+    """根据文件完整路径生成唯一缩略图路径（使用路径 MD5 避免同名文件冲突）"""
+    path_hash = hashlib.md5(file_path.encode()).hexdigest()[:16]
+    return THUMBNAIL_DIR / f"{path_hash}_thumb.{THUMBNAIL_FORMAT}"
+
+
 async def generate_image_thumbnail(file_path: str) -> Optional[str]:
     """
     生成图片缩略图
@@ -31,9 +38,8 @@ async def generate_image_thumbnail(file_path: str) -> Optional[str]:
         缩略图相对路径（如 /static/thumbnails/xxx.webp）或 None 如果失败
     """
     try:
-        file_name = Path(file_path).stem
-        thumbnail_filename = f"{file_name}_thumb.{THUMBNAIL_FORMAT}"
-        thumbnail_path = THUMBNAIL_DIR / thumbnail_filename
+        thumbnail_path = get_thumbnail_path(file_path)
+        thumbnail_filename = thumbnail_path.name
         
         # 如果缩略图已存在，直接返回
         if thumbnail_path.exists():
@@ -43,6 +49,9 @@ async def generate_image_thumbnail(file_path: str) -> Optional[str]:
         # 在线程中运行 Pillow 操作以防阻塞事件循环
         def _generate():
             with Image.open(file_path) as img:
+                # 应用 EXIF 方向信息，确保缩略图方向与实际显示一致
+                img = ImageOps.exif_transpose(img)
+
                 # 计算宽度以保持纵横比
                 aspect_ratio = img.width / img.height
                 new_width = int(THUMBNAIL_HEIGHT * aspect_ratio)
@@ -77,9 +86,8 @@ async def generate_video_thumbnail(file_path: str) -> Optional[str]:
         缩略图相对路径（如 /static/thumbnails/xxx.webp）或 None 如果失败
     """
     try:
-        file_name = Path(file_path).stem
-        thumbnail_filename = f"{file_name}_thumb.{THUMBNAIL_FORMAT}"
-        thumbnail_path = THUMBNAIL_DIR / thumbnail_filename
+        thumbnail_path = get_thumbnail_path(file_path)
+        thumbnail_filename = thumbnail_path.name
         
         # 如果缩略图已存在，直接返回
         if thumbnail_path.exists():
