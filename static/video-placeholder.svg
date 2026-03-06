@@ -1,0 +1,22 @@
+<svg width="300" height="300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4a5568;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2d3748;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- 背景 -->
+  <rect width="300" height="300" fill="url(#grad)"/>
+  
+  <!-- 播放按钮圆形背景 -->
+  <circle cx="150" cy="150" r="60" fill="rgba(255, 255, 255, 0.9)"/>
+  
+  <!-- 播放三角形 -->
+  <polygon points="135,130 135,170 175,150" fill="#2d3748"/>
+  
+  <!-- 顶部标签 -->
+  <text x="150" y="50" font-size="24" fill="white" text-anchor="middle" font-weight="bold">视频</text>
+  
+  <!-- 底部提示文字 -->
+  <text x="150" y="270" font-size="14" fill="rgba(255, 255, 255, 0.7)" text-anchor="middle">点击查看</text>
+</svg>

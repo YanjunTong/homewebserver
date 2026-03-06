@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>视频库 - 媒体中心</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f5;
+        }
+
+        .navbar {
+            background: white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 2rem;
+        }
+
+        .navbar h1 {
+            font-size: 1.5rem;
+            color: #333;
+        }
+
+        .nav-left {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .back-btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 0.5rem;
+            background: #667eea;
+            color: white;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+        }
+
+        .back-btn:hover {
+            background: #5568d3;
+        }
+
+        .counter {
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .counter strong {
+            font-weight: bold;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }
+
+        .status {
+            text-align: center;
+            padding: 2rem;
+            font-size: 1.1rem;
+            color: #666;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f4f6;
+            border-top-color: #ef4444;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 0.5rem;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .card {
+            background: white;
+            border-radius: 0.75rem;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+        }
+
+        .card:hover .play-btn {
+            transform: scale(1.1);
+        }
+
+        .card-image {
+            width: 100%;
+            height: 180px;
+            background: #e5e7eb;
+            object-fit: cover;
+        }
+
+        .card-thumbnail {
+            position: relative;
+            width: 100%;
+            height: 180px;
+            background: #1f2937;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .play-btn {
+            width: 50px;
+            height: 50px;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            transition: all 0.3s;
+        }
+
+        .card-info {
+            padding: 0.75rem;
+        }
+
+        .card-title {
+            font-weight: 500;
+            font-size: 0.85rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: #1f2937;
+        }
+
+        .card-meta {
+            font-size: 0.75rem;
+            color: #6b7280;
+            margin-top: 0.25rem;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: black;
+            border-radius: 0.75rem;
+            max-width: 95vw;
+            max-height: 95vh;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: rgba(255, 255, 255, 0.9);
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            z-index: 10;
+        }
+
+        .modal-close:hover {
+            background: white;
+        }
+
+        .modal-video {
+            width: 100%;
+            max-width: 100%;
+            max-height: 85vh;
+            display: block;
+        }
+
+        .modal-info {
+            padding: 1.5rem;
+            background: #1f2937;
+            color: white;
+            max-height: 15vh;
+            overflow-y: auto;
+        }
+
+        .modal-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+
+        .modal-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1.5rem;
+            font-size: 0.9rem;
+        }
+
+        .detail-item {
+            color: #d1d5db;
+        }
+
+        .detail-label {
+            color: #9ca3af;
+            font-size: 0.85rem;
+            margin-bottom: 0.3rem;
+        }
+
+        .empty {
+            text-align: center;
+            padding: 4rem 2rem;
+        }
+
+        .empty-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+
+        .empty-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 0.5rem;
+        }
+
+        .empty-text {
+            color: #666;
+        }
+
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+                gap: 1rem;
+            }
+
+            .navbar {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .nav-left {
+                width: 100%;
+                justify-content: space-between;
+            }
+
+            .modal-content {
+                max-width: 100vw;
+                max-height: 100vh;
+                border-radius: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 导航栏 -->
+    <div class="navbar">
+        <div class="nav-left">
+            <button class="back-btn" onclick="window.location.href='index.html'">← 返回首页</button>
+            <h1>🎥 视频库</h1>
+        </div>
+        <div class="counter">
+            视频: <strong id="counter">0</strong>
+            <button class="back-btn" style="margin-left: 1rem; padding: 0.4rem 0.8rem; font-size: 0.85rem;" 
+                    onclick="preloadThumbnails()" title="预加载所有视频缺略图">
+                ⚡ 预加载缺略图
+            </button>
+        </div>
+    </div>
+
+    <!-- 主容器 -->
+    <div class="container">
+        <div id="status" class="status">
+            <div class="spinner"></div>
+            加载中...
+        </div>
+        <div id="grid" class="grid" style="display: none;"></div>
+    </div>
+
+    <!-- 预览模态框 -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal()">✕</button>
+            <!-- 优化的视频播放器配置 -->
+            <video id="modalVideo" class="modal-video" controls autoplay
+                   disablePictureInPicture playsinline 
+                   preload="auto"></video>
+            <div class="modal-info">
+                <div class="modal-title" id="modalTitle"></div>
+                <div class="modal-details" id="modalDetails"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let mediaList = [];
+
+        // 初始化
+        async function init() {
+            await loadMedia();
+        }
+
+        // 加载媒体列表
+        async function loadMedia() {
+            try {
+                const response = await fetch('/media?skip=0&limit=5000');
+                const data = await response.json();
+
+                // 只显示视频
+                mediaList = data.filter(m => m.media_type === 'video') || [];
+
+                document.getElementById('counter').textContent = mediaList.length;
+                renderMedia();
+            } catch (error) {
+                console.error('加载失败:', error);
+                document.getElementById('status').innerHTML = '<div class="empty-text">加载失败，请刷新重试</div>';
+            }
+        }
+
+        // 渲染媒体
+        function renderMedia() {
+            const grid = document.getElementById('grid');
+            const status = document.getElementById('status');
+
+            if (mediaList.length === 0) {
+                status.innerHTML = '<div class="empty"><div class="empty-icon">🎥</div><div class="empty-title">暂无视频文件</div><div class="empty-text">请先扫描视频文件夹</div></div>';
+                grid.style.display = 'none';
+                return;
+            }
+
+            status.style.display = 'none';
+            grid.style.display = 'grid';
+            grid.innerHTML = '';
+
+            mediaList.forEach(media => {
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.onclick = () => openModal(media);
+
+                const thumbnail = document.createElement('div');
+                thumbnail.className = 'card-thumbnail';
+
+                const img = document.createElement('img');
+                img.className = 'card-image';
+                img.src = `/media/${media.id}/thumbnail`;
+                img.style.position = 'absolute';
+                img.style.width = '100%';
+                img.style.height = '100%';
+                img.style.objectFit = 'cover';
+                
+                let retryCount = 0;
+                const maxRetries = 3;
+                
+                img.onerror = () => {
+                    // 缩略图加载失败时重试
+                    if (retryCount < maxRetries) {
+                        retryCount++;
+                        setTimeout(() => {
+                            img.src = `/media/${media.id}/thumbnail?t=${Date.now()}`;
+                        }, 500 * retryCount);
+                    } else {
+                        // 显示占位图
+                        img.style.display = 'none';
+                    }
+                };
+
+                const playBtn = document.createElement('div');
+                playBtn.className = 'play-btn';
+                playBtn.textContent = '▶';
+
+                thumbnail.appendChild(img);
+                thumbnail.appendChild(playBtn);
+
+                const info = document.createElement('div');
+                info.className = 'card-info';
+                info.innerHTML = `
+                    <div class="card-title" title="${media.filename}">${media.filename}</div>
+                    <div class="card-meta">${formatSize(media.size)}</div>
+                    ${media.duration ? `<div class="card-meta">⏱️ ${formatDuration(media.duration)}</div>` : ''}
+                    ${media.width ? `<div class="card-meta">${media.width} × ${media.height}</div>` : ''}
+                `;
+
+                card.appendChild(thumbnail);
+                card.appendChild(info);
+                grid.appendChild(card);
+            });
+        }
+
+        // 打开预览
+        function openModal(media) {
+            const video = document.getElementById('modalVideo');
+            
+            // 设置硬件加速和优化播放
+            video.src = `/media/${media.id}/stream`;
+            video.preload = 'auto';  // 自动预加载
+            video.crossOrigin = 'anonymous';
+            
+            // 确保视频元素有3D加速
+            video.style.webkitTransform = 'translate3d(0, 0, 0)';
+            video.style.backfaceVisibility = 'hidden';
+            
+            document.getElementById('modalTitle').textContent = media.filename;
+            document.getElementById('modalDetails').innerHTML = `
+                <div class="detail-item">
+                    <div class="detail-label">大小</div>
+                    <div>${formatSize(media.size)}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">时长</div>
+                    <div>${media.duration ? formatDuration(media.duration) : '-'}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">分辨率</div>
+                    <div>${media.width || '-'} × ${media.height || '-'}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">上传时间</div>
+                    <div>${new Date(media.created_at).toLocaleDateString('zh-CN')}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">格式</div>
+                    <div>${media.filename.split('.').pop().toUpperCase()}</div>
+                </div>
+            `;
+
+            document.getElementById('modal').classList.add('active');
+        }
+
+        // 关闭预览
+        function closeModal() {
+            const video = document.getElementById('modalVideo');
+            video.pause();
+            video.src = '';
+            document.getElementById('modal').classList.remove('active');
+        }
+
+        // 辅助函数
+        function formatSize(bytes) {
+            if (!bytes) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        function formatDuration(seconds) {
+            if (!seconds) return '0:00';
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = Math.floor(seconds % 60);
+
+            if (h > 0) {
+                return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+            }
+            return `${m}:${String(s).padStart(2, '0')}`;
+        }
+
+        // Esc 关闭模态框
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeModal();
+            }
+        });
+
+        // 页面加载完成
+        document.addEventListener('DOMContentLoaded', init);
+
+        // 预加载缺失的缩略图
+        async function preloadThumbnails() {
+            const btn = event.target;
+            const originalText = btn.textContent;
+            
+            try {
+                btn.disabled = true;
+                btn.textContent = '⏳ 预加载中...';
+                
+                const response = await fetch('/thumbnails/generate-missing?media_type=video', {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert('缩略图预加载任务已启动，请稍候片刻后刷新页面查看效果');
+                } else {
+                    alert('预加载失败: ' + (data.detail || '未知错误'));
+                }
+            } catch (error) {
+                console.error('预加载失败:', error);
+                alert('预加载失败，请检查网络连接');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+    </script>
+</body>
+</html>

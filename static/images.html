@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图片库 - 媒体中心</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f5;
+        }
+
+        .navbar {
+            background: white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 2rem;
+        }
+
+        .navbar h1 {
+            font-size: 1.5rem;
+            color: #333;
+        }
+
+        .nav-left {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .back-btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 0.5rem;
+            background: #667eea;
+            color: white;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+        }
+
+        .back-btn:hover {
+            background: #5568d3;
+        }
+
+        .counter {
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .counter strong {
+            font-weight: bold;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }
+
+        .status {
+            text-align: center;
+            padding: 2rem;
+            font-size: 1.1rem;
+            color: #666;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f4f6;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 0.5rem;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .card {
+            background: white;
+            border-radius: 0.75rem;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+        }
+
+        .card-image {
+            width: 100%;
+            height: 180px;
+            background: #e5e7eb;
+            object-fit: cover;
+        }
+
+        .card-info {
+            padding: 0.75rem;
+        }
+
+        .card-title {
+            font-weight: 500;
+            font-size: 0.85rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: #1f2937;
+        }
+
+        .card-meta {
+            font-size: 0.75rem;
+            color: #6b7280;
+            margin-top: 0.25rem;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 0.75rem;
+            max-width: 90vw;
+            max-height: 90vh;
+            overflow: auto;
+            position: relative;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: white;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            z-index: 1;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        .modal-close:hover {
+            background: #f5f5f5;
+        }
+
+        .modal-image {
+            max-width: 100%;
+            max-height: 80vh;
+            display: block;
+        }
+
+        .modal-info {
+            padding: 1.5rem;
+            background: #f5f5f5;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .modal-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+
+        .modal-details {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1.5rem;
+            font-size: 0.9rem;
+        }
+
+        .detail-item {
+            color: #666;
+        }
+
+        .detail-label {
+            color: #999;
+            font-size: 0.85rem;
+            margin-bottom: 0.3rem;
+        }
+
+        .empty {
+            text-align: center;
+            padding: 4rem 2rem;
+        }
+
+        .empty-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+
+        .empty-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 0.5rem;
+        }
+
+        .empty-text {
+            color: #666;
+        }
+
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+                gap: 1rem;
+            }
+
+            .navbar {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .nav-left {
+                width: 100%;
+                justify-content: space-between;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 导航栏 -->
+    <div class="navbar">
+        <div class="nav-left">
+            <button class="back-btn" onclick="window.location.href='index.html'">← 返回首页</button>
+            <h1>🖼️ 图片库</h1>
+        </div>
+        <div class="counter">图片: <strong id="counter">0</strong></div>
+    </div>
+
+    <!-- 主容器 -->
+    <div class="container">
+        <div id="status" class="status">
+            <div class="spinner"></div>
+            加载中...
+        </div>
+        <div id="grid" class="grid" style="display: none;"></div>
+    </div>
+
+    <!-- 预览模态框 -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal()">✕</button>
+            <img id="modalImage" class="modal-image" alt="">
+            <div class="modal-info">
+                <div class="modal-title" id="modalTitle"></div>
+                <div class="modal-details" id="modalDetails"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let mediaList = [];
+
+        // 初始化
+        async function init() {
+            await loadMedia();
+        }
+
+        // 加载媒体列表
+        async function loadMedia() {
+            try {
+                const response = await fetch('/media?skip=0&limit=5000');
+                const data = await response.json();
+                
+                // 只显示图片
+                mediaList = data.filter(m => m.media_type === 'image') || [];
+
+                document.getElementById('counter').textContent = mediaList.length;
+                renderMedia();
+            } catch (error) {
+                console.error('加载失败:', error);
+                document.getElementById('status').innerHTML = '<div class="empty-text">加载失败，请刷新重试</div>';
+            }
+        }
+
+        // 渲染媒体
+        function renderMedia() {
+            const grid = document.getElementById('grid');
+            const status = document.getElementById('status');
+
+            if (mediaList.length === 0) {
+                status.innerHTML = '<div class="empty"><div class="empty-icon">🖼️</div><div class="empty-title">暂无图片文件</div><div class="empty-text">请先扫描图片文件夹</div></div>';
+                grid.style.display = 'none';
+                return;
+            }
+
+            status.style.display = 'none';
+            grid.style.display = 'grid';
+            grid.innerHTML = '';
+
+            mediaList.forEach(media => {
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.onclick = () => openModal(media);
+
+                const img = document.createElement('img');
+                img.className = 'card-image';
+                img.src = `/media/${media.id}/thumbnail`;
+                img.onerror = () => {
+                    img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 150"%3E%3Crect fill="%23e5e7eb" width="200" height="150"/%3E%3C/svg%3E';
+                };
+
+                const info = document.createElement('div');
+                info.className = 'card-info';
+                info.innerHTML = `
+                    <div class="card-title" title="${media.filename}">${media.filename}</div>
+                    <div class="card-meta">${formatSize(media.size)}</div>
+                    ${media.width ? `<div class="card-meta">${media.width} × ${media.height}</div>` : ''}
+                `;
+
+                card.appendChild(img);
+                card.appendChild(info);
+                grid.appendChild(card);
+            });
+        }
+
+        // 打开预览
+        function openModal(media) {
+            document.getElementById('modalImage').src = `/media/${media.id}/stream`;
+            document.getElementById('modalTitle').textContent = media.filename;
+            document.getElementById('modalDetails').innerHTML = `
+                <div class="detail-item">
+                    <div class="detail-label">大小</div>
+                    <div>${formatSize(media.size)}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">分辨率</div>
+                    <div>${media.width || '-'} × ${media.height || '-'}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">上传时间</div>
+                    <div>${new Date(media.created_at).toLocaleDateString('zh-CN')}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">格式</div>
+                    <div>${media.filename.split('.').pop().toUpperCase()}</div>
+                </div>
+            `;
+
+            document.getElementById('modal').classList.add('active');
+        }
+
+        // 关闭预览
+        function closeModal() {
+            document.getElementById('modal').classList.remove('active');
+        }
+
+        // 辅助函数
+        function formatSize(bytes) {
+            if (!bytes) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        // Esc 关闭模态框
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeModal();
+            }
+        });
+
+        // 页面加载完成
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
