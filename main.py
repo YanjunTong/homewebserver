@@ -1,4 +1,5 @@
 """FastAPI 应用主入口"""
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -47,6 +48,24 @@ async def lifespan(app: FastAPI):
         # 初始化数据库
         await init_db()
         logger.info("数据库初始化完成")
+
+        # 启动时自动在后台扫描媒体文件夹
+        async def _auto_scan():
+            from database import AsyncSessionLocal
+            from services.scanner import scan_directory
+            try:
+                async with AsyncSessionLocal() as db:
+                    logger.info(f"自动扫描图片文件夹: {settings.image_folder}")
+                    await scan_directory(settings.image_folder, db)
+                async with AsyncSessionLocal() as db:
+                    logger.info(f"自动扫描视频文件夹: {settings.video_folder}")
+                    await scan_directory(settings.video_folder, db)
+                logger.info("自动扫描完成")
+            except Exception as e:
+                logger.error(f"自动扫描失败: {e}")
+
+        asyncio.create_task(_auto_scan())
+
     except Exception as e:
         logger.error(f"应用启动失败: {e}")
         raise
@@ -109,8 +128,8 @@ async def health_check():
 
 @app.api_route("/scan", methods=["GET", "POST"], tags=["扫描"])
 async def scan_media(
+    background_tasks: BackgroundTasks,
     root_path: str = Query(None, description="要扫描的根目录路径（留空则使用配置默认值）"),
-    background_tasks: BackgroundTasks = BackgroundTasks(),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -150,7 +169,7 @@ async def scan_media(
 
 @app.api_route("/scan/images", methods=["GET", "POST"], tags=["扫描"])
 async def scan_images(
-    background_tasks: BackgroundTasks = BackgroundTasks(),
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -181,7 +200,7 @@ async def scan_images(
 
 @app.api_route("/scan/videos", methods=["GET", "POST"], tags=["扫描"])
 async def scan_videos(
-    background_tasks: BackgroundTasks = BackgroundTasks(),
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -214,8 +233,8 @@ async def scan_videos(
 
 @app.post("/thumbnails/generate-missing", tags=["缩略图"])
 async def generate_missing_thumbnails(
+    background_tasks: BackgroundTasks,
     media_type: str = Query("all", pattern="^(all|image|video)$", description="媒体类型"),
-    background_tasks: BackgroundTasks = BackgroundTasks(),
     db: AsyncSession = Depends(get_db),
 ):
     """
