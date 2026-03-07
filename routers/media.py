@@ -138,7 +138,7 @@ async def get_media_thumbnail(
                     return FileResponse(
                         path=svg_path,
                         media_type="image/svg+xml",
-                        headers={"Cache-Control": "no-cache"}
+                        headers={"Cache-Control": "public, max-age=3600"}
                     )
             
             # 正常缩略图处理
@@ -151,7 +151,7 @@ async def get_media_thumbnail(
                 return FileResponse(
                     path=thumbnail_file_path,
                     media_type="image/webp",
-                    headers={"Cache-Control": "no-cache"}
+                    headers={"Cache-Control": "public, max-age=86400, immutable"}
                 )
         
         # 如果缩略图生成失败，返回一个占位符图片
@@ -200,12 +200,18 @@ async def stream_media(
         
         # 视频使用流式传输（支持拖动进度条），图片直接返回原文件
         if media.media_type == "video":
-            if file_path.endswith(".mp4"):
-                content_type = "video/mp4"
-            elif file_path.endswith(".mkv"):
-                content_type = "video/x-matroska"
-            else:
-                content_type = "video/mp4"
+            ext = Path(file_path).suffix.lower()
+            video_mime_map = {
+                ".mp4":  "video/mp4",
+                ".mkv":  "video/x-matroska",
+                ".avi":  "video/x-msvideo",
+                ".mov":  "video/quicktime",
+                ".webm": "video/webm",
+                ".flv":  "video/x-flv",
+                ".wmv":  "video/x-ms-wmv",
+                ".m4v":  "video/x-m4v",
+            }
+            content_type = video_mime_map.get(ext, "video/mp4")
             logger.info(f"流式传输视频: id={media_id}")
             return await range_requests_response(request, file_path, content_type)
         else:

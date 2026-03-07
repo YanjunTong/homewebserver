@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, BackgroundTasks, Depends, Query
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, func
@@ -69,6 +70,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# GZip 压缩：压缩 JSON API 响应，减少 Tailscale 传输数据量
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 # ==================== 静态文件挂载 ====================
@@ -217,39 +221,56 @@ async def generate_missing_thumbnails(
     async def _generate_thumbnails():
         try:
             from models import Media
-            from services.thumbnail import generate_thumbnail
+            from services.thumbnail import generate_thumbnail, get_thumbnail_path
             from sqlalchemy import select
             
-            # 查询所有媒体
-            if media_type in ["all", "image"]:
-                stmt = select(Media).where(Media.media_type == "image")
+            # 查询所有缩略图尚未生成的媒体（thumbnail_path 为空的）
+            stmt = select(Media)
+            if media_type == "image":
+                stmt = stmt.where(Media.media_type == "image")
             elif media_type == "video":
-                stmt = select(Media).where(Media.media_type == "video")
-            else:
-                stmt = select(Media)
-            
+                stmt = stmt.where(Media.media_type == "video")
+
             result = await db.execute(stmt)
             media_list = result.scalars().all()
-            
+
+            # 只处理缩略图文件不存在的
+            pending = [m for m in media_list if not get_thumbnail_path(m.file_path).exists()]
+
             generated_count = 0
             failed_count = 0
-            
-            logger.info(f"开始预生成缺失的缩略图，共 {len(media_list)} 个文件")
-            
-            for media in media_list:
-                try:
-                    # 生成缩略图
-                    thumbnail_url = await generate_thumbnail(media.file_path, media.media_type)
-                    if thumbnail_url:
-                        generated_count += 1
-                except Exception as e:
-                    logger.warning(f"生成缩略图失败 {media.file_path}: {e}")
-                    failed_count += 1
-            
-            logger.info(f"缩略图预生成完成：成功 {generated_count}，失败 {failed_count}")
-            
+            skipped_count = len(media_list) - len(pending)
+
+            logger.info(f"开始预生成缩略图：共 {len(media_list)} 个，跳过已有 {skipped_count} 个，待处理 {len(pending)} 个")
+
+            # 并发限制：图片 8 并发，视频 2 并发（避免同时跑多个 ffmpeg）
+            img_sem = asyncio.Semaphore(8)
+            vid_sem = asyncio.Semaphore(2)
+
+            async def _process(media):
+                nonlocal generated_count, failed_count
+                sem = img_sem if media.media_type == "image" else vid_sem
+                async with sem:
+                    try:
+                        thumbnail_url = await generate_thumbnail(media.file_path, media.media_type)
+                        if thumbnail_url and not thumbnail_url.endswith(".svg"):
+                            media.thumbnail_path = thumbnail_url
+                            generated_count += 1
+                            if generated_count % 50 == 0:
+                                await db.commit()
+                                logger.info(f"进度: {generated_count}/{len(pending)}")
+                    except Exception as e:
+                        logger.warning(f"生成缩略图失败 {media.file_path}: {e}")
+                        failed_count += 1
+
+            await asyncio.gather(*[_process(m) for m in pending])
+            await db.commit()
+
+            logger.info(f"缩略图预生成完成：成功 {generated_count}，失败 {failed_count}，跳过 {skipped_count}")
+
         except Exception as e:
             logger.error(f"批量生成缩略图失败: {e}")
+            await db.rollback()
     
     background_tasks.add_task(_generate_thumbnails)
     

@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     debug: bool = True
     
     # 媒体文件夹配置
-    content_folder: str = "/home/yanjun/media/content"
+    content_folder: str = "/home/yanjun/media/test_content"
     
     # 数据库配置
     database_url: str = "sqlite+aiosqlite:///./media.db"

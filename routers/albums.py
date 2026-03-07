@@ -21,9 +21,20 @@ async def get_albums(
     limit: int = 20,
     db: AsyncSession = Depends(get_db)
 ):
-    """获取所有相册（分页）"""
-    albums = await crud.get_all_albums(db, skip=skip, limit=limit)
-    return albums
+    """获取所有相册（分页），封面 media_id 通过 JOIN 一次查出，避免前端 N+1 请求"""
+    rows = await crud.get_all_albums(db, skip=skip, limit=limit)
+    return [
+        AlbumRead(
+            id=album.id,
+            name=album.name,
+            path=album.path,
+            cover_image_path=album.cover_image_path,
+            cover_media_id=cover_media_id,
+            cover_media_type=str(cover_media_type) if cover_media_type else None,
+            created_at=album.created_at,
+        )
+        for album, cover_media_id, cover_media_type in rows
+    ]
 
 
 @router.get("/count")

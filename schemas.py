@@ -85,6 +85,8 @@ class AlbumRead(BaseModel):
     name: str
     path: str
     cover_image_path: Optional[str]
+    cover_media_id: Optional[int] = None       # 封面媒体 ID（一次 JOIN 获取，省去前端额外请求）
+    cover_media_type: Optional[str] = None     # 封面媒体类型（image/video）
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

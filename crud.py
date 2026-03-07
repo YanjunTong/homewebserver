@@ -3,6 +3,7 @@
 from typing import Optional, List
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from models import Album, Media, MediaType
 
@@ -23,11 +24,25 @@ async def get_album_by_path(db: AsyncSession, path: str) -> Optional[Album]:
     return result.scalars().first()
 
 
-async def get_all_albums(db: AsyncSession, skip: int = 0, limit: int = 20) -> List[Album]:
-    """获取所有相册（分页）"""
-    stmt = select(Album).offset(skip).limit(limit).order_by(Album.created_at.desc())
+async def get_all_albums(db: AsyncSession, skip: int = 0, limit: int = 20) -> List[tuple]:
+    """获取所有相册（分页），一次 JOIN 返回封面 media_id 和 media_type，避免前端 N+1 请求"""
+    # 子查询：每个相册中 id 最小的 media（用作封面）
+    cover_media = aliased(Media)
+    subq = (
+        select(Media.album_id, func.min(Media.id).label("cover_media_id"))
+        .group_by(Media.album_id)
+        .subquery()
+    )
+    stmt = (
+        select(Album, subq.c.cover_media_id, cover_media.media_type)
+        .outerjoin(subq, Album.id == subq.c.album_id)
+        .outerjoin(cover_media, cover_media.id == subq.c.cover_media_id)
+        .offset(skip)
+        .limit(limit)
+        .order_by(Album.created_at.desc())
+    )
     result = await db.execute(stmt)
-    return result.scalars().all()
+    return result.all()
 
 
 async def count_albums(db: AsyncSession) -> int:

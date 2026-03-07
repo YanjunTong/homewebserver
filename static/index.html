@@ -308,14 +308,10 @@
 
         // ===== Init =====
         async function init() {
-            const status = document.getElementById('status');
-            try {
-                status.style.display = 'block';
-                status.innerHTML = '<div class="spinner"></div>正在扫描媒体文件夹...';
-                await fetch('/scan');
-                await new Promise(r => setTimeout(r, 1800));
-            } catch(e) { console.warn('扫描失败:', e); }
+            // 先立即加载已有内容（数据库中的相册），不等待扫描
             await loadAlbums();
+            // 扫描在后台进行，完成后不阻塞页面显示
+            fetch('/scan').catch(e => console.warn('后台扫描失败:', e));
         }
 
         async function loadAlbums() {
@@ -340,38 +336,33 @@
             albumList.forEach(album => {
                 const card = document.createElement('div');
                 card.className = 'card'; card.onclick = () => openAlbum(album);
-                const cover = document.createElement('div');
-                cover.className = 'album-placeholder'; cover.id = 'cover-' + album.id; cover.textContent = '📁';
+                let coverEl;
+                if (album.cover_media_id) {
+                    // 封面 media_id 已由后端 JOIN 查询返回，无需额外 API 请求
+                    if (album.cover_media_type === 'video') {
+                        coverEl = document.createElement('div');
+                        coverEl.className = 'card-thumbnail';
+                        const img = document.createElement('img');
+                        img.src = `/media/${album.cover_media_id}/thumbnail`;
+                        img.onerror = () => img.style.display = 'none';
+                        const play = document.createElement('div');
+                        play.className = 'play-btn'; play.textContent = '▶';
+                        coverEl.appendChild(img); coverEl.appendChild(play);
+                    } else {
+                        coverEl = document.createElement('img');
+                        coverEl.className = 'card-image';
+                        coverEl.src = `/media/${album.cover_media_id}/thumbnail`;
+                        coverEl.onerror = () => {};
+                    }
+                } else {
+                    coverEl = document.createElement('div');
+                    coverEl.className = 'album-placeholder'; coverEl.textContent = '📁';
+                }
                 const info = document.createElement('div');
                 info.className = 'card-info';
                 info.innerHTML = `<div class="card-title" title="${album.name}">${album.name}</div>`;
-                card.appendChild(cover); card.appendChild(info); grid.appendChild(card);
-                loadAlbumCover(album.id);
+                card.appendChild(coverEl); card.appendChild(info); grid.appendChild(card);
             });
-        }
-
-        async function loadAlbumCover(albumId) {
-            try {
-                const res = await fetch(`/albums/${albumId}/media?skip=0&limit=1`);
-                const items = await res.json();
-                if (!items.length) return;
-                const wrap = document.getElementById('cover-' + albumId);
-                if (!wrap) return;
-                const item = items[0];
-                if (item.media_type === 'image') {
-                    const img = document.createElement('img');
-                    img.className = 'card-image'; img.src = `/media/${item.id}/thumbnail`; img.onerror = () => {};
-                    wrap.replaceWith(img);
-                } else if (item.media_type === 'video') {
-                    const thumb = document.createElement('div');
-                    thumb.className = 'card-thumbnail';
-                    const img = document.createElement('img');
-                    img.src = `/media/${item.id}/thumbnail`; img.onerror = () => img.style.display = 'none';
-                    const play = document.createElement('div');
-                    play.className = 'play-btn'; play.textContent = '▶';
-                    thumb.appendChild(img); thumb.appendChild(play); wrap.replaceWith(thumb);
-                }
-            } catch(e) {}
         }
 
         async function openAlbum(album) {

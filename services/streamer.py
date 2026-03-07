@@ -10,8 +10,8 @@ from starlette.responses import StreamingResponse
 logger = logging.getLogger(__name__)
 
 # 流式传输配置
-# 增大 chunk size 以加快传输速度（从 1MB 改为 4MB）
-CHUNK_SIZE = 1024 * 1024 * 4  # 4MB 每个块
+# 远程访问优化：512KB 块大小，让视频更快开始播放（低带宽 Tailscale 连接）
+CHUNK_SIZE = 1024 * 512  # 512KB 每个块
 
 
 def parse_range_header(range_header: str, file_size: int) -> Tuple[int, int]:

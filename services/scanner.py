@@ -2,6 +2,8 @@
 import asyncio
 import logging
 import os
+import struct
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple, Dict
@@ -23,6 +25,81 @@ SUPPORTED_EXTENSIONS = {
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm"}
+
+
+def is_mp4_faststart(file_path: str) -> bool:
+    """
+    检查 MP4 文件的 moov atom 是否在 mdat 之前。
+    moov 在前 = faststart 已优化，浏览器可即时 seek。
+    moov 在后 = 需要优化，浏览器必须线性缓冲到目标时间点。
+    """
+    try:
+        with open(file_path, 'rb') as f:
+            while True:
+                header = f.read(8)
+                if len(header) < 8:
+                    break
+
+                size = struct.unpack('>I', header[:4])[0]
+                atom_type = header[4:8].decode('latin-1')
+
+                if size == 1:  # 64 位扩展 size
+                    ext = f.read(8)
+                    if len(ext) < 8:
+                        break
+                    size = struct.unpack('>Q', ext)[0]
+                    f.seek(size - 16, 1)
+                elif size == 0:  # 延伸到文件末尾
+                    break
+                else:
+                    f.seek(size - 8, 1)
+
+                if atom_type == 'moov':
+                    return True   # moov 在 mdat 之前 → 已是 faststart
+                elif atom_type == 'mdat':
+                    return False  # mdat 在 moov 之前 → 需要 faststart
+    except Exception:
+        pass
+    return True  # 读取出错时保守处理，不执行优化
+
+
+async def apply_faststart(file_path: str) -> bool:
+    """
+    用 FFmpeg 将 MP4 的 moov atom 移到文件开头（faststart）。
+    使用 -c copy 纯重封装，不重新编码，速度快（通常每 GB 约 5-15 秒）。
+    """
+    temp_path = file_path + '.__fs_tmp__.mp4'
+    try:
+        def _run() -> bool:
+            result = subprocess.run(
+                [
+                    'ffmpeg', '-i', file_path,
+                    '-c', 'copy',
+                    '-movflags', '+faststart',
+                    '-y', '-loglevel', 'error',
+                    temp_path,
+                ],
+                capture_output=True,
+                timeout=7200,
+            )
+            return result.returncode == 0
+
+        success = await asyncio.to_thread(_run)
+        if success and os.path.exists(temp_path):
+            os.replace(temp_path, file_path)  # 原子重命名
+            logger.info(f"✓ faststart 优化完成: {os.path.basename(file_path)}")
+            return True
+        else:
+            logger.warning(f"faststart 优化未成功: {file_path}")
+    except Exception as e:
+        logger.warning(f"faststart 优化失败 {file_path}: {e}")
+    finally:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+    return False
 
 
 async def get_image_dimensions(file_path: str) -> Optional[Tuple[int, int]]:
@@ -229,6 +306,10 @@ async def scan_files_in_album(db: AsyncSession, album: Album) -> dict:
         # 添加新文件
         for file_path, filename in disk_files.items():
             if file_path in db_medias:
+                # 已有文件：对 MP4 检查并修复 faststart（首次扫描时会修复存量文件）
+                if Path(filename).suffix.lower() == '.mp4' and not is_mp4_faststart(file_path):
+                    logger.info(f"对已有 MP4 应用 faststart 优化: {filename}")
+                    await apply_faststart(file_path)
                 stats["files_skipped"] += 1
                 continue
             
@@ -255,6 +336,11 @@ async def scan_files_in_album(db: AsyncSession, album: Album) -> dict:
                         width = meta.get("width")
                         height = meta.get("height")
                         duration = meta.get("duration")
+
+                    # MP4 faststart 优化：moov atom 移到文件开头，拖动进度条即时响应
+                    if Path(filename).suffix.lower() == '.mp4' and not is_mp4_faststart(file_path):
+                        logger.info(f"新 MP4 应用 faststart 优化: {filename}")
+                        await apply_faststart(file_path)
                 
                 media = Media(
                     album_id=album.id,
