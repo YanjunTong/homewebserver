@@ -137,7 +137,10 @@ class Media(Base):
     
     # 缩略图路径（可为空）
     thumbnail_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
-    
+
+    # 预览视频路径（60s 精彩片段，可为空）
+    preview_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+
     # 关系：属于一个 Album
     album: Mapped["Album"] = relationship(
         "Album",

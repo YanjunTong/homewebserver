@@ -465,8 +465,25 @@
 
         // ===== Video Modal =====
         function openVideoModal(media) {
-            document.getElementById('vidPlayer').src = `/media/${media.id}/stream`;
-            document.getElementById('vidInfo').textContent = media.filename + (media.duration ? `  ⏱️ ${formatDuration(media.duration)}` : '');
+            const vid = document.getElementById('vidPlayer');
+            const info = document.getElementById('vidInfo');
+            let seekingReload = false;
+
+            const attachSeek = () => {
+                vid.onseeking = () => {
+                    if (seekingReload) { seekingReload = false; return; }
+                    const t = Math.max(0, vid.currentTime - 0.2);
+                    seekingReload = true;
+                    vid.src = `/media/${media.id}/stream?start=${t.toFixed(2)}`;
+                    vid.play().catch(() => {});
+                };
+            };
+
+            vid.onloadedmetadata = () => { seekingReload = false; };
+            attachSeek();
+
+            vid.src = `/media/${media.id}/stream`;
+            info.textContent = media.filename + (media.duration ? `  ⏱️ ${formatDuration(media.duration)}` : '');
             document.getElementById('vidModal').classList.add('active');
         }
         function closeVideoModal() {

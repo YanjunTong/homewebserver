@@ -26,6 +26,7 @@ class MediaCreate(BaseModel):
     duration: Optional[float] = Field(default=None, ge=0)
     is_favorite: bool = Field(default=False)
     thumbnail_path: Optional[str] = Field(default=None, max_length=512)
+    preview_path: Optional[str] = Field(default=None, max_length=512)
 
 
 class MediaUpdate(BaseModel):
@@ -53,6 +54,7 @@ class MediaRead(BaseModel):
     created_at: datetime
     is_favorite: bool
     thumbnail_path: Optional[str]
+    preview_path: Optional[str]
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -42,10 +42,22 @@ async def get_db():
 
 async def init_db():
     """
-    初始化数据库，创建所有表
+    初始化数据库，创建所有表；并对已有表执行增量列迁移
     """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # 增量迁移：为旧数据库补充 preview_path 列（若已存在则跳过）
+        await conn.run_sync(_migrate_add_preview_path)
+
+
+def _migrate_add_preview_path(sync_conn):
+    """同步函数：检查并添加 preview_path 列（供 run_sync 调用）"""
+    import sqlalchemy as sa
+    inspector = sa.inspect(sync_conn)
+    existing_cols = {col["name"] for col in inspector.get_columns("media")}
+    if "preview_path" not in existing_cols:
+        sync_conn.execute(sa.text("ALTER TABLE media ADD COLUMN preview_path VARCHAR(512)"))
+
 
 
 async def close_db():

@@ -55,6 +55,10 @@
         .counter {
             font-size: 0.9rem;
             color: #666;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
         }
 
         .counter strong {
@@ -102,7 +106,7 @@
             overflow: hidden;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
             cursor: pointer;
-            transition: all 0.3s;
+            transition: transform 0.3s, box-shadow 0.3s;
             position: relative;
         }
 
@@ -130,6 +134,75 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            overflow: hidden;
+        }
+
+        /* ---- 预览视频覆盖层 ---- */
+        .preview-video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0;
+            transition: opacity 0.4s ease;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        .preview-video.visible {
+            opacity: 1;
+        }
+
+        /* 悬停倒计时进度环 */
+        .preview-ring {
+            position: absolute;
+            top: 6px;
+            left: 6px;
+            width: 28px;
+            height: 28px;
+            z-index: 8;
+            opacity: 0;
+            transition: opacity 0.2s;
+            pointer-events: none;
+        }
+
+        .preview-ring.active {
+            opacity: 1;
+        }
+
+        .preview-ring circle.track {
+            fill: none;
+            stroke: rgba(255,255,255,0.3);
+            stroke-width: 3;
+        }
+
+        .preview-ring circle.progress {
+            fill: none;
+            stroke: #ef4444;
+            stroke-width: 3;
+            stroke-linecap: round;
+            stroke-dasharray: 69.1; /* 2π×11 */
+            stroke-dashoffset: 69.1;
+            transform: rotate(-90deg);
+            transform-origin: 14px 14px;
+            transition: stroke-dashoffset 0.1s linear;
+        }
+
+        /* 预览可用角标 */
+        .preview-badge {
+            position: absolute;
+            bottom: 6px;
+            right: 6px;
+            background: rgba(239, 68, 68, 0.85);
+            color: white;
+            font-size: 0.58rem;
+            font-weight: 600;
+            padding: 2px 5px;
+            border-radius: 3px;
+            z-index: 6;
+            letter-spacing: 0.02em;
         }
 
         .play-btn {
@@ -142,6 +215,8 @@
             justify-content: center;
             font-size: 1.5rem;
             transition: all 0.3s;
+            z-index: 4;
+            position: relative;
         }
 
         .card-info {
@@ -302,9 +377,17 @@
         </div>
         <div class="counter">
             视频: <strong id="counter">0</strong>
-            <button class="back-btn" style="margin-left: 1rem; padding: 0.4rem 0.8rem; font-size: 0.85rem;" 
-                    onclick="preloadThumbnails()" title="预加载所有视频缺略图">
-                ⚡ 预加载缺略图
+            <button class="back-btn" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;"
+                    onclick="preloadThumbnails()" title="预加载所有视频缩略图">
+                ⚡ 预加载缩略图
+            </button>
+            <button class="back-btn" style="padding: 0.4rem 0.8rem; font-size: 0.85rem; background:#ef4444;"
+                    onclick="preloadPreviews()" title="批量生成视频预览（后台任务）">
+                🎬 生成预览
+            </button>
+            <button class="back-btn" style="padding: 0.4rem 0.8rem; font-size: 0.85rem; background:#10b981;"
+                    onclick="prebuildFaststart()" title="为所有 MP4/MOV/M4V 生成快跳缓存">
+                🚀 预生成快跳
             </button>
         </div>
     </div>
@@ -322,9 +405,8 @@
     <div id="modal" class="modal">
         <div class="modal-content">
             <button class="modal-close" onclick="closeModal()">✕</button>
-            <!-- 优化的视频播放器配置 -->
             <video id="modalVideo" class="modal-video" controls autoplay
-                   disablePictureInPicture playsinline 
+                   disablePictureInPicture playsinline
                    preload="auto"></video>
             <div class="modal-info">
                 <div class="modal-title" id="modalTitle"></div>
@@ -336,18 +418,179 @@
     <script>
         let mediaList = [];
 
-        // 初始化
+        // ===================== 预览控制 =====================
+        // 每张卡片对应的状态（用 WeakMap 避免内存泄漏）
+        const cardState = new WeakMap();
+
+        // 延迟时长（毫秒）
+        const PREVIEW_DELAY = 3000;
+        // 视频最短时长才显示预览（秒）
+        const PREVIEW_MIN_DURATION = 120;
+
+        /**
+         * 开始倒计时，3s 后开始播放预览视频
+         */
+        function startPreviewCountdown(card, mediaId) {
+            const state = cardState.get(card);
+            if (!state || state.previewStatus === 'unavailable') return;
+
+            // 显示进度环
+            const ring = card.querySelector('.preview-ring');
+            const progressCircle = ring && ring.querySelector('.progress');
+            if (ring) ring.classList.add('active');
+
+            const CIRCUMFERENCE = 69.1; // 2π×11
+            const startTime = Date.now();
+
+            // 更新进度环
+            state.ringTimer = setInterval(() => {
+                const elapsed = Date.now() - startTime;
+                const fraction = Math.min(elapsed / PREVIEW_DELAY, 1);
+                if (progressCircle) {
+                    progressCircle.style.strokeDashoffset = CIRCUMFERENCE * (1 - fraction);
+                }
+            }, 50);
+
+            // 3s 后播放预览
+            state.hoverTimer = setTimeout(() => {
+                clearInterval(state.ringTimer);
+                if (ring) ring.classList.remove('active');
+                if (progressCircle) progressCircle.style.strokeDashoffset = CIRCUMFERENCE;
+                playPreview(card, mediaId);
+            }, PREVIEW_DELAY);
+        }
+
+        /**
+         * 取消倒计时，重置进度环
+         */
+        function cancelPreviewCountdown(card) {
+            const state = cardState.get(card);
+            if (!state) return;
+
+            clearTimeout(state.hoverTimer);
+            clearInterval(state.ringTimer);
+            state.hoverTimer = null;
+            state.ringTimer = null;
+
+            const ring = card.querySelector('.preview-ring');
+            const progressCircle = ring && ring.querySelector('.progress');
+            if (ring) ring.classList.remove('active');
+            if (progressCircle) progressCircle.style.strokeDashoffset = 69.1;
+        }
+
+        /**
+         * 开始播放预览视频
+         */
+        function playPreview(card, mediaId) {
+            const state = cardState.get(card);
+            if (!state || state.previewStatus === 'unavailable') return;
+
+            const previewEl = card.querySelector('.preview-video');
+            if (!previewEl) return;
+
+            // 设置 src（若还未设置或需要重播）
+            const src = `/media/${mediaId}/preview`;
+            if (!previewEl.src || !previewEl.src.endsWith(src.replace(/^\//, ''))) {
+                previewEl.src = src;
+            }
+            previewEl.currentTime = 0;
+            previewEl.muted = true;
+            previewEl.loop = true;
+
+            const playPromise = previewEl.play();
+            if (playPromise) {
+                playPromise.then(() => {
+                    previewEl.classList.add('visible');
+                    state.previewStatus = 'available';
+                }).catch(err => {
+                    // 404 或其他错误 → 标记不可用，不再尝试
+                    if (err.name !== 'AbortError') {
+                        console.warn(`预览不可用 media=${mediaId}:`, err.message);
+                        state.previewStatus = 'unavailable';
+                        previewEl.src = '';
+                        // 移除角标
+                        const badge = card.querySelector('.preview-badge');
+                        if (badge) badge.remove();
+                    }
+                });
+            }
+        }
+
+        /**
+         * 停止并重置预览视频（离开或出视口时调用）
+         */
+        function stopPreview(card) {
+            cancelPreviewCountdown(card);
+            const previewEl = card.querySelector('.preview-video');
+            if (!previewEl) return;
+            previewEl.pause();
+            previewEl.classList.remove('visible');
+            // 不清除 src，下次快速恢复
+        }
+
+        // IntersectionObserver：卡片离开视口时停止预览
+        const visibilityObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (!entry.isIntersecting) {
+                    stopPreview(entry.target);
+                }
+            });
+        }, { threshold: 0.05 });
+
+        /**
+         * 为卡片绑定预览事件（桌面 hover + 移动长按）
+         */
+        function attachPreviewEvents(card, mediaId, duration) {
+            // 初始化状态
+            cardState.set(card, {
+                hoverTimer: null,
+                ringTimer: null,
+                previewStatus: 'unknown',  // 'unknown' | 'available' | 'unavailable'
+            });
+
+            // 时长不足，跳过
+            if (!duration || duration < PREVIEW_MIN_DURATION) return;
+
+            // 注册视口观察
+            visibilityObserver.observe(card);
+
+            // ---- 桌面：鼠标悬停 ----
+            card.addEventListener('mouseenter', () => {
+                startPreviewCountdown(card, mediaId);
+            });
+            card.addEventListener('mouseleave', () => {
+                stopPreview(card);
+            });
+
+            // ---- 移动端：长按 ----
+            let touchMoved = false;
+            card.addEventListener('touchstart', (e) => {
+                touchMoved = false;
+                startPreviewCountdown(card, mediaId);
+            }, { passive: true });
+            card.addEventListener('touchmove', () => {
+                touchMoved = true;
+                cancelPreviewCountdown(card);
+            }, { passive: true });
+            card.addEventListener('touchend', () => {
+                cancelPreviewCountdown(card);
+            }, { passive: true });
+            card.addEventListener('touchcancel', () => {
+                stopPreview(card);
+            }, { passive: true });
+        }
+
+        // ===================== 初始化 =====================
+
         async function init() {
             await scanAndLoad();
         }
 
-        // 扫描后加载
         async function scanAndLoad() {
             const status = document.getElementById('status');
             try {
                 status.innerHTML = '<div class="spinner"></div>正在扫描视频文件夹...';
                 await fetch('/scan/videos');
-                // 等待后台扫描任务完成
                 await new Promise(r => setTimeout(r, 1500));
             } catch (e) {
                 console.warn('扫描请求失败，尝试直接加载:', e);
@@ -355,15 +598,11 @@
             await loadMedia();
         }
 
-        // 加载媒体列表
         async function loadMedia() {
             try {
                 const response = await fetch('/media?skip=0&limit=5000');
                 const data = await response.json();
-
-                // 只显示视频
                 mediaList = data.filter(m => m.media_type === 'video') || [];
-
                 document.getElementById('counter').textContent = mediaList.length;
                 renderMedia();
             } catch (error) {
@@ -372,7 +611,8 @@
             }
         }
 
-        // 渲染媒体
+        // ===================== 渲染 =====================
+
         function renderMedia() {
             const grid = document.getElementById('grid');
             const status = document.getElementById('status');
@@ -390,46 +630,77 @@
             mediaList.forEach(media => {
                 const card = document.createElement('div');
                 card.className = 'card';
-                card.onclick = () => openModal(media);
 
+                // 点击打开正片（阻止在预览播放时不小心点到）
+                card.addEventListener('click', (e) => {
+                    const previewEl = card.querySelector('.preview-video');
+                    if (previewEl && !previewEl.paused) {
+                        // 预览正在播放时仍允许点击打开正片
+                    }
+                    openModal(media);
+                });
+
+                // 缩略图容器
                 const thumbnail = document.createElement('div');
                 thumbnail.className = 'card-thumbnail';
 
+                // 封面图
                 const img = document.createElement('img');
                 img.className = 'card-image';
                 img.src = `/media/${media.id}/thumbnail`;
-                img.style.position = 'absolute';
-                img.style.width = '100%';
-                img.style.height = '100%';
-                img.style.objectFit = 'cover';
-                
+                img.style.cssText = 'position:absolute;width:100%;height:100%;object-fit:cover;';
+
                 let retryCount = 0;
-                const maxRetries = 3;
-                
                 img.onerror = () => {
-                    // 缩略图加载失败时重试
-                    if (retryCount < maxRetries) {
+                    if (retryCount < 3) {
                         retryCount++;
-                        setTimeout(() => {
-                            img.src = `/media/${media.id}/thumbnail?t=${Date.now()}`;
-                        }, 500 * retryCount);
+                        setTimeout(() => { img.src = `/media/${media.id}/thumbnail?t=${Date.now()}`; }, 500 * retryCount);
                     } else {
-                        // 显示占位图
                         img.style.display = 'none';
                     }
                 };
 
+                // 预览视频覆盖层（无 src，按需加载）
+                const previewVideo = document.createElement('video');
+                previewVideo.className = 'preview-video';
+                previewVideo.muted = true;
+                previewVideo.playsInline = true;
+                previewVideo.preload = 'none';
+                // 阻止 video 上的点击事件冒泡（由 card.click 统一处理）
+                previewVideo.addEventListener('click', e => e.stopPropagation());
+
+                // 播放按钮
                 const playBtn = document.createElement('div');
                 playBtn.className = 'play-btn';
                 playBtn.textContent = '▶';
 
+                // 倒计时进度环（SVG）
+                const CIRCUMFERENCE = 69.1;
+                const ring = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                ring.setAttribute('viewBox', '0 0 28 28');
+                ring.classList.add('preview-ring');
+                ring.innerHTML = `
+                    <circle class="track" cx="14" cy="14" r="11"/>
+                    <circle class="progress" cx="14" cy="14" r="11" stroke-dasharray="${CIRCUMFERENCE}" stroke-dashoffset="${CIRCUMFERENCE}"/>
+                `;
+
                 thumbnail.appendChild(img);
+                thumbnail.appendChild(previewVideo);
                 thumbnail.appendChild(playBtn);
+                thumbnail.appendChild(ring);
+
+                // 预览可用角标（有 preview_path 记录，或时长足够）
+                if (media.preview_path || (media.duration && media.duration >= PREVIEW_MIN_DURATION)) {
+                    const badge = document.createElement('div');
+                    badge.className = 'preview-badge';
+                    badge.textContent = '预览';
+                    thumbnail.appendChild(badge);
+                }
 
                 const info = document.createElement('div');
                 info.className = 'card-info';
                 info.innerHTML = `
-                    <div class="card-title" title="${media.filename}">${media.filename}</div>
+                    <div class="card-title" title="${escapeHtml(media.filename)}">${escapeHtml(media.filename)}</div>
                     <div class="card-meta">${formatSize(media.size)}</div>
                     ${media.duration ? `<div class="card-meta">⏱️ ${formatDuration(media.duration)}</div>` : ''}
                     ${media.width ? `<div class="card-meta">${media.width} × ${media.height}</div>` : ''}
@@ -438,22 +709,34 @@
                 card.appendChild(thumbnail);
                 card.appendChild(info);
                 grid.appendChild(card);
+
+                // 绑定预览交互
+                attachPreviewEvents(card, media.id, media.duration);
             });
         }
 
-        // 打开预览
+        // ===================== 正片模态框 =====================
+
         function openModal(media) {
             const video = document.getElementById('modalVideo');
-            
-            // 设置硬件加速和优化播放
+            let seekingReload = false;
+
+            video.onseeking = () => {
+                if (seekingReload) { seekingReload = false; return; }
+                const t = Math.max(0, video.currentTime - 0.2);
+                seekingReload = true;
+                video.src = `/media/${media.id}/stream?start=${t.toFixed(2)}`;
+                video.play().catch(() => {});
+            };
+
+            video.onloadedmetadata = () => { seekingReload = false; };
+
             video.src = `/media/${media.id}/stream`;
-            video.preload = 'auto';  // 自动预加载
+            video.preload = 'auto';
             video.crossOrigin = 'anonymous';
-            
-            // 确保视频元素有3D加速
             video.style.webkitTransform = 'translate3d(0, 0, 0)';
             video.style.backfaceVisibility = 'hidden';
-            
+
             document.getElementById('modalTitle').textContent = media.filename;
             document.getElementById('modalDetails').innerHTML = `
                 <div class="detail-item">
@@ -477,11 +760,9 @@
                     <div>${media.filename.split('.').pop().toUpperCase()}</div>
                 </div>
             `;
-
             document.getElementById('modal').classList.add('active');
         }
 
-        // 关闭预览
         function closeModal() {
             const video = document.getElementById('modalVideo');
             video.pause();
@@ -489,7 +770,12 @@
             document.getElementById('modal').classList.remove('active');
         }
 
-        // 辅助函数
+        // ===================== 工具函数 =====================
+
+        function escapeHtml(str) {
+            return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+
         function formatSize(bytes) {
             if (!bytes) return '0 B';
             const k = 1024;
@@ -503,46 +789,71 @@
             const h = Math.floor(seconds / 3600);
             const m = Math.floor((seconds % 3600) / 60);
             const s = Math.floor(seconds % 60);
-
-            if (h > 0) {
-                return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-            }
-            return `${m}:${String(s).padStart(2, '0')}`;
+            if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+            return `${m}:${String(s).padStart(2,'0')}`;
         }
 
-        // Esc 关闭模态框
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                closeModal();
-            }
+            if (e.key === 'Escape') closeModal();
         });
 
-        // 页面加载完成
         document.addEventListener('DOMContentLoaded', init);
 
-        // 预加载缺失的缩略图
+        // ===================== 批量任务 =====================
+
         async function preloadThumbnails() {
             const btn = event.target;
             const originalText = btn.textContent;
-            
             try {
                 btn.disabled = true;
                 btn.textContent = '⏳ 预加载中...';
-                
-                const response = await fetch('/thumbnails/generate-missing?media_type=video', {
-                    method: 'POST'
-                });
-                
+                const response = await fetch('/thumbnails/generate-missing?media_type=video', { method: 'POST' });
                 const data = await response.json();
-                
+                alert(response.ok ? '缩略图预加载任务已启动，请稍候片刻后刷新页面查看效果' : '预加载失败: ' + (data.detail || '未知错误'));
+            } catch (error) {
+                alert('预加载失败，请检查网络连接');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+
+        async function preloadPreviews() {
+            const btn = event.target;
+            const originalText = btn.textContent;
+            try {
+                btn.disabled = true;
+                btn.textContent = '⏳ 生成中...';
+                const response = await fetch('/media/previews/generate-missing', { method: 'POST' });
+                const data = await response.json();
                 if (response.ok) {
-                    alert('缩略图预加载任务已启动，请稍候片刻后刷新页面查看效果');
+                    alert(`预览生成任务已启动！待处理：${data.queued} 个视频。生成完成后刷新页面即可看到预览角标。`);
                 } else {
-                    alert('预加载失败: ' + (data.detail || '未知错误'));
+                    alert('启动失败: ' + (data.detail || '未知错误'));
                 }
             } catch (error) {
-                console.error('预加载失败:', error);
-                alert('预加载失败，请检查网络连接');
+                alert('请求失败，请检查网络连接');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+
+        async function prebuildFaststart() {
+            const btn = event.target;
+            const originalText = btn.textContent;
+            try {
+                btn.disabled = true;
+                btn.textContent = '⏳ 预生成中...';
+                const response = await fetch('/media/faststart/generate-missing', { method: 'POST' });
+                const data = await response.json();
+                if (response.ok) {
+                    alert(`已启动快跳缓存任务，队列：${data.queued}`);
+                } else {
+                    alert('启动失败: ' + (data.detail || data.message || '未知错误'));
+                }
+            } catch (error) {
+                alert('请求失败，请检查网络连接');
             } finally {
                 btn.disabled = false;
                 btn.textContent = originalText;

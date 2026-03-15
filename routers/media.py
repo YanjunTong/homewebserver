@@ -4,22 +4,55 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
-from models import Media
+from models import Media, MediaType
 from schemas import MediaRead, MediaDetailRead
 from services.thumbnail import generate_thumbnail, THUMBNAIL_DIR, get_thumbnail_path
-from services.streamer import range_requests_response
+from services.streamer import (
+    range_requests_response,
+    stream_from_time,
+)
+from services.faststart import ensure_faststart
+from services.faststart import FASTSTART_EXTS
+from services.previewer import generate_video_preview, get_preview_path, PREVIEW_DIR
 
 logger = logging.getLogger(__name__)
 
 # 创建路由器
 router = APIRouter(prefix="/media", tags=["媒体"])
+
+
+@router.post("/faststart/generate-missing", tags=["媒体"])
+async def generate_missing_faststart(
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """后台为所有支持 faststart 的视频生成缓存，避免首次播放等待。"""
+    stmt = select(Media).where(Media.media_type == MediaType.VIDEO)
+    result = await db.execute(stmt)
+    videos = result.scalars().all()
+
+    targets = [m for m in videos if Path(m.file_path).suffix.lower() in FASTSTART_EXTS]
+    if not targets:
+        return {"queued": 0, "message": "无可处理的 MP4/MOV/M4V"}
+
+    async def _build_all():
+        from services.faststart import ensure_faststart
+        for m in targets:
+            try:
+                await ensure_faststart(m.file_path)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("faststart 预生成失败 id=%s err=%s", m.id, exc)
+
+    background_tasks.add_task(_build_all)
+    logger.info("faststart 预生成任务已启动，待处理 %d 个文件", len(targets))
+    return {"queued": len(targets), "message": "预生成任务已启动"}
 
 
 @router.get("", response_model=list[MediaRead])
@@ -169,6 +202,7 @@ async def get_media_thumbnail(
 async def stream_media(
     media_id: int,
     request: Request,
+    start: float | None = Query(default=None, ge=0, description="起播时间（秒）"),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -212,8 +246,22 @@ async def stream_media(
                 ".m4v":  "video/x-m4v",
             }
             content_type = video_mime_map.get(ext, "video/mp4")
-            logger.info(f"流式传输视频: id={media_id}")
-            return await range_requests_response(request, file_path, content_type)
+
+            # 直接指定 start 参数：精准起播
+            if start is not None:
+                logger.info("直起播 stream_from_time: id=%s start=%.2f", media_id, start)
+                return await stream_from_time(file_path, start, content_type)
+
+            # 默认：faststart + Range
+            stream_path = await ensure_faststart(file_path)
+            content_type = video_mime_map.get(Path(stream_path).suffix.lower(), "video/mp4")
+            logger.info(
+                "流式传输视频: id=%s path=%s faststart=%s",
+                media_id,
+                Path(stream_path).name,
+                stream_path != file_path,
+            )
+            return await range_requests_response(request, stream_path, content_type)
         else:
             # 图片直接返回原文件，不分块，让浏览器完整缓存
             ext = Path(file_path).suffix.lower()
@@ -314,3 +362,101 @@ async def rotate_image(
 
     logger.info(f"图片旋转成功: id={media_id}, direction={direction}, size={new_width}x{new_height}")
     return {"status": "ok", "width": new_width, "height": new_height}
+
+
+# ==================== 预览视频接口 ====================
+
+@router.get("/{media_id}/preview")
+async def get_media_preview(
+    media_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    获取视频预览片段（60s 精彩合集，无声 MP4）。
+
+    若预览文件已生成则直接流式返回；
+    若尚未生成且视频足够长则同步生成后返回；
+    若视频太短则返回 404。
+    """
+    stmt = select(Media).where(Media.id == media_id)
+    result = await db.execute(stmt)
+    media = result.scalars().first()
+
+    if not media:
+        raise HTTPException(status_code=404, detail="媒体不存在")
+    if media.media_type != MediaType.VIDEO:
+        raise HTTPException(status_code=400, detail="仅视频支持预览")
+
+    preview_file = get_preview_path(media.file_path)
+
+    # 已有缓存文件，直接流式返回
+    if preview_file.exists():
+        return await range_requests_response(request, str(preview_file), "video/mp4")
+
+    # 取视频时长（优先用 DB 中记录的值）
+    duration = media.duration
+    if not duration:
+        raise HTTPException(status_code=404, detail="无法获取视频时长")
+
+    from services.previewer import MIN_DURATION
+    if duration < MIN_DURATION:
+        raise HTTPException(status_code=404, detail="视频过短，无预览")
+
+    # 同步生成预览
+    preview_url = await generate_video_preview(media.file_path, duration)
+    if not preview_url:
+        raise HTTPException(status_code=500, detail="预览生成失败")
+
+    # 更新数据库
+    media.preview_path = preview_url
+    await db.commit()
+
+    return await range_requests_response(request, str(preview_file), "video/mp4")
+
+
+@router.post("/previews/generate-missing", tags=["媒体"])
+async def generate_missing_previews(
+    background_tasks: BackgroundTasks,
+    min_duration: float = Query(120.0, ge=60, description="最短视频时长（秒），低于此值跳过"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    后台批量生成缺失的视频预览。
+    符合条件（视频类型 + 时长足够 + 预览文件不存在）的视频将进入后台队列生成。
+    """
+    stmt = select(Media).where(
+        Media.media_type == MediaType.VIDEO,
+        Media.duration >= min_duration,
+    )
+    result = await db.execute(stmt)
+    videos = result.scalars().all()
+
+    pending = [
+        m for m in videos
+        if not get_preview_path(m.file_path).exists()
+    ]
+
+    if not pending:
+        return {"message": "所有符合条件的视频已有预览", "queued": 0}
+
+    async def _batch_generate():
+        """后台逐个生成，避免同时并发过多 FFmpeg 进程"""
+        from database import AsyncSessionLocal
+        async with AsyncSessionLocal() as sess:
+            for m in pending:
+                try:
+                    url = await generate_video_preview(m.file_path, m.duration)
+                    if url:
+                        # 更新 DB
+                        db_media = await sess.get(Media, m.id)
+                        if db_media:
+                            db_media.preview_path = url
+                            await sess.commit()
+                except Exception as e:
+                    logger.error(f"批量预览生成异常 media_id={m.id}: {e}")
+
+    background_tasks.add_task(_batch_generate)
+    logger.info(f"批量预览任务已启动，待处理 {len(pending)} 个视频")
+    return {"message": "预览生成任务已启动", "queued": len(pending)}
+

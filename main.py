@@ -1,6 +1,7 @@
 """FastAPI 应用主入口"""
 import logging
 import os
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -11,8 +12,10 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database import init_db, close_db, get_db, engine
+from database import init_db, close_db, get_db, engine, AsyncSessionLocal
+from models import Media, MediaType
 from services.scanner import scan_directory
+from services.faststart import ensure_faststart, FASTSTART_EXTS
 from schemas import MediaRead, AlbumRead
 from config import settings, ensure_folders_exist
 from routers import media as media_router
@@ -47,6 +50,9 @@ async def lifespan(app: FastAPI):
         # 初始化数据库
         await init_db()
         logger.info("数据库初始化完成")
+
+        # 启动后台任务：预生成 faststart 缓存，加速长视频快跳
+        asyncio.create_task(prebuild_faststart_all())
     except Exception as e:
         logger.error(f"应用启动失败: {e}")
         raise
@@ -90,6 +96,32 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 app.include_router(media_router.router)
 app.include_router(albums_router.router)
+
+
+# ==================== 后台快跳预生成 ====================
+
+async def prebuild_faststart_all():
+    """后台为所有支持 faststart 的视频生成缓存（moov 前置）。"""
+    try:
+        async with AsyncSessionLocal() as db:
+            stmt = select(Media).where(Media.media_type == MediaType.VIDEO)
+            result = await db.execute(stmt)
+            videos = result.scalars().all()
+
+            targets = [m for m in videos if Path(m.file_path).suffix.lower() in FASTSTART_EXTS]
+            if not targets:
+                logger.info("faststart 预生成：无可处理的视频")
+                return
+
+            logger.info("faststart 预生成启动，待处理 %d 个视频", len(targets))
+            for m in targets:
+                try:
+                    await ensure_faststart(m.file_path)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("faststart 预生成失败 id=%s err=%s", m.id, exc)
+            logger.info("faststart 预生成完成")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("faststart 预生成任务异常: %s", exc)
 
 
 # ==================== 根路由 ====================

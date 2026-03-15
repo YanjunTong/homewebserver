@@ -1,6 +1,8 @@
 """HTTP 范围请求流式传输服务"""
+import asyncio
 import logging
 import os
+import subprocess
 from pathlib import Path
 from typing import Tuple
 
@@ -10,8 +12,8 @@ from starlette.responses import StreamingResponse
 logger = logging.getLogger(__name__)
 
 # 流式传输配置
-# 远程访问优化：512KB 块大小，让视频更快开始播放（低带宽 Tailscale 连接）
-CHUNK_SIZE = 1024 * 512  # 512KB 每个块
+# 适当增大块大小，减少 seek 时的请求轮次
+CHUNK_SIZE = 1024 * 1024  # 1MB 每个块
 
 
 def parse_range_header(range_header: str, file_size: int) -> Tuple[int, int]:
@@ -64,6 +66,20 @@ def parse_range_header(range_header: str, file_size: int) -> Tuple[int, int]:
     except (ValueError, IndexError):
         logger.warning(f"无效的 Range 头: {range_header}")
         return 0, file_size - 1
+
+
+def parse_range_start(range_header: str) -> int:
+    """解析 Range 头的起始字节（仅取 start，失败返回 0）。"""
+    try:
+        if not range_header or not range_header.startswith("bytes="):
+            return 0
+        range_str = range_header[6:]
+        if "-" not in range_str:
+            return 0
+        start_str, _ = range_str.split("-", 1)
+        return int(start_str or 0)
+    except Exception:
+        return 0
 
 
 async def range_requests_response(
@@ -149,3 +165,64 @@ async def range_requests_response(
                 "Cache-Control": "public, max-age=3600",
             },
         )
+
+
+async def stream_from_time(
+    file_path: str,
+    start_seconds: float,
+    content_type: str = "video/mp4",
+) -> StreamingResponse:
+    """
+    使用 ffmpeg 从指定时间点开始无损复制输出，避免读取前序数据。
+
+    - 仅用于视频；不支持 Range，与浏览器拖拽兼容（直接播放从起点）。
+    - 采用 chunked 传输，客户端无需等待完整时长。
+    """
+
+    cmd = [
+        "ffmpeg",
+        "-ss",
+        str(max(0, start_seconds)),
+        "-i",
+        file_path,
+        "-c",
+        "copy",
+        "-movflags",
+        "+faststart",
+        "-f",
+        "mp4",
+        "-loglevel",
+        "error",
+        "pipe:1",
+    ]
+
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    async def _iter():
+        try:
+            while True:
+                chunk = await proc.stdout.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            if proc.returncode is None:
+                proc.kill()
+            try:
+                await proc.wait()
+            except Exception:  # noqa: BLE001
+                pass
+
+    return StreamingResponse(
+        _iter(),
+        media_type=content_type,
+        headers={
+            "Cache-Control": "no-store",
+            "Accept-Ranges": "none",
+            "X-Accel-Buffering": "no",
+        },
+    )
